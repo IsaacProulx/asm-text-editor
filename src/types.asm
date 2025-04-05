@@ -41,7 +41,7 @@ struc	ttermios
 	.c_cc		resb	64
 endstruc
 
-struc	cursor
+struc	tcursor
 	.row		resd	1
 	.col		resd	1
 endstruc

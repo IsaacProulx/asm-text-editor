@@ -7,22 +7,27 @@ section .bss
 	tty_termios		resb	ttermios_size
 	hex_number		resd	1
 	character		resb	1
-	
+	cursor			resb	tcursor_size
+	int_string		resb	10
+	cursor_pos_string	resb	24
+	cursor_pos_string_len	resb	1	
+
 section .data
 			;align	4
 	tty_state	dd	0
-	cursor_up 	db 0x1b, "[1A" ; the "1" is the number of lines to move the cursor
-	cursor_down 	db 0x1b, "[1B" ; the "1" is the number of lines to move the cursor
-	cursor_right 	db 0x1b, "[1C" ; the "1" is the number of lines to move the cursor
-	cursor_left	db 0x1b, "[1D" ; the "1" is the number of lines to move the cursor
-	cursor_count	equ 2
-	cursor_home	db 0x1b, "[H"
-	cursor_set_pos	db 0x1b, "[1;2f" ; the "1" is the row, the "2" is the column
-	cursor_pos_row	equ 2
-	cursor_pos_col	equ 4
-	clear_screen	db 0x1b, "[2J"
-	msg	db "test", 0x0A
-	hex_characters	db "0123456789ABCDEF"
+	cursor_up 	db 	0x1b, "[1A" ; the "1" is the number of lines to move the cursor
+	cursor_down 	db 	0x1b, "[1B" ; the "1" is the number of lines to move the cursor
+	cursor_right 	db 	0x1b, "[1C" ; the "1" is the number of lines to move the cursor
+	cursor_left	db 	0x1b, "[1D" ; the "1" is the number of lines to move the cursor
+	cursor_count	equ 	2
+	cursor_home	db 	0x1b, "[H"
+	cursor_set_pos	db 	0x1b, "[1;2f" ; the "1" is the row, the "2" is the column
+	cursor_pos_row	equ 	2
+	cursor_pos_col	equ 	4
+	clear_screen	db 	0x1b, "[2J"
+	msg		db 	"test", 0x0A
+	hex_characters	db 	"0123456789ABCDEF"
+	int_string_len	db 	0
 
 
 section .text
@@ -82,15 +87,105 @@ _start:
 	mov	rsi, clear_screen
 	mov	rdx, 4
 	syscall
+	
+	mov	byte [cursor_pos_string], 0x1B
+	mov	byte [cursor_pos_string+1], '['
 
-	mov	byte [cursor_set_pos+cursor_pos_row], '2'
-	mov	byte [cursor_set_pos+cursor_pos_col], '1'
+	call set_cursor_pos
+	jmp get_input
+	
+set_cursor_pos:
+	mov	dword [cursor + tcursor.row], 2
+	mov	dword [cursor + tcursor.col], 1
+	ret
+
+int_to_string:
+	push	rbx
+	mov	dword esi, 9
+	mov	dword ebx, 10
+	.loop:
+	xor	edx, edx
+	div	dword ebx
+	add	byte dl, '0'
+	mov	byte [int_string + esi], dl
+	dec	dword esi
+	test	eax, eax
+	jnz	.loop	
+
+	mov	byte [int_string_len], sil
+	sub	byte bl, [int_string_len]
+	dec	byte bl
+	mov	byte [int_string_len], bl
+	pop	rbx
+	ret
+
+mov_cursor:
+	mov	byte [cursor_pos_string_len], 2
+	mov	dword eax, [cursor + tcursor.row]
+	call	int_to_string
+	
+	cld
+	xor	dword ecx, ecx
+	xor	dword edi, edi
+	mov	byte cl, [int_string_len]
+	add	dword esi, int_string
+	inc	dword esi
+	mov	byte dil, [cursor_pos_string_len]
+	add	dword edi, cursor_pos_string
+	rep	movsb
+
+	mov	byte cl, [int_string_len]
+	add	byte cl, [cursor_pos_string_len]
+
+	mov	byte [cursor_pos_string+ecx], ';'
+	inc	byte cl
+	mov	byte [cursor_pos_string_len], cl
+
+	mov	dword eax, [cursor + tcursor.col]
+	call	int_to_string
+	
+	cld
+	xor	dword ecx, ecx
+	xor	dword edi, edi
+	mov	byte cl, [int_string_len]
+	add	dword esi, int_string
+	inc	dword esi
+	mov	byte dil, [cursor_pos_string_len]
+	add	dword edi, cursor_pos_string
+	rep	movsb
+
+	mov	byte cl, [int_string_len]
+	add	byte cl, [cursor_pos_string_len]
+
+	mov	byte [cursor_pos_string+ecx], 'H'
+	inc	byte cl
+	mov	byte [cursor_pos_string_len], cl
+
+
 	mov	rax, SYS_WRITE
 	mov	rdi, STDOUT
-	mov	rsi, cursor_set_pos
-	mov	rdx, 6
+	mov	rsi, cursor_pos_string
+	mov	dword edx, ecx
 	syscall
 
+	
+	; this only works when row and col are between 0 and 10
+	;mov	dword ecx, [cursor + tcursor.row]
+	;mov	dword edx, [cursor + tcursor.col]
+
+	;and	byte cl, 0x0f
+	;and	byte dl, 0x0f
+	;add	cl, 0x30
+	;add	dl, 0x30
+
+	;mov	byte [cursor_set_pos+cursor_pos_row], cl
+	;mov	byte [cursor_set_pos+cursor_pos_col], dl
+	;mov	rax, SYS_WRITE
+	;mov	rdi, STDOUT
+	;mov	rsi, cursor_set_pos
+	;mov	rdx, 6
+	;syscall
+	ret
 
 get_input:
 	mov 	rax, SYS_READ
@@ -100,12 +195,19 @@ get_input:
 	syscall
 	
 	call	display_key
-
+	
 	; exit when escape is pressed
 	mov	rcx, 0
 	mov	byte cl, [character]
 	cmp	cl, 0x1B
 	je	exit
+	
+	call	mov_cursor
+	mov	rsi, character
+	mov	rdx, 1
+	call	print_string
+
+	inc	dword [cursor + tcursor.col]
 
 	jmp	get_input
 
@@ -151,11 +253,12 @@ move_cursor_up:
 ; mov rdx, 1 ; SEEK_CUR
 ; syscall
 
+; params: rsi (string pointer), rdx (int)
 print_string:
 	mov rax, SYS_WRITE
 	mov rdi, STDOUT
-	mov rsi, hex_number
-	mov rdx, 2
+	;mov rsi, hex_number
+	;mov rdx, 2
 	syscall
 	ret
 
