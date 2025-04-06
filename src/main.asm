@@ -6,7 +6,7 @@ section .bss
 	tty_kbmode_saved	resd	1
 	tty_termios		resb	ttermios_size
 	hex_number		resd	1
-	character		resb	1
+	character		resb	4
 	cursor			resb	tcursor_size
 	int_string		resb	10
 	cursor_pos_string	resb	24
@@ -163,18 +163,23 @@ get_input:
 	mov 	rax, SYS_READ
 	mov 	rdi, STDIN
 	mov 	rsi, character
-	mov 	rdx, 1
+	mov 	rdx, 4
 	syscall
 	
 	call	display_key
-	
-	; exit when escape is pressed
+	push	rax
+	call	mov_cursor
+	pop	rax
+
 	mov	rcx, 0
+	cmp	rax, 1
+	jne	handle_multi_byte_key
+	
 	mov	byte cl, [character]
+	; exit when escape is pressed
 	cmp	cl, 0x1B
 	je	exit
 	
-	call	mov_cursor
 	mov	rsi, character
 	mov	rdx, 1
 	call	print_string
@@ -183,7 +188,17 @@ get_input:
 
 	jmp	get_input
 
+
+handle_multi_byte_key:
+	mov	byte cl, [character]
+
+	;do something
+	jmp	get_input	
+
+
 display_key:
+	push	rbx
+	push	rax
 	; move cursor to top-left
 	mov	rax, SYS_WRITE
 	mov	rdi, STDOUT
@@ -192,9 +207,11 @@ display_key:
 	syscall
 	
 	; print hex value of pressed key
+	mov	rbx, 0
+	.loop:
 	mov	ecx, 0
 	mov	edx, 0
-	mov	byte cl, [character]
+	mov	byte cl, [character+rbx]
 	mov	byte dl, cl
 	shr	byte dl, 4
 	and	byte cl, 0x0f
@@ -207,7 +224,23 @@ display_key:
 	mov	rsi, hex_number
 	mov	rdx, 2
 	syscall
+	inc	rbx
+	cmp	rbx, [rsp]
+	jne	.loop
+	
+	mov	word [hex_number], '  '
+	.draw_blank:
+	mov	rax, SYS_WRITE
+	mov	rdi, STDOUT
+	mov	rsi, hex_number
+	mov	rdx, 2
+	syscall
+	inc	rbx
+	cmp	rbx, 4
+	jl	.draw_blank
 
+	pop	rax
+	pop	rbx
 	ret 
 
 move_cursor_up:
