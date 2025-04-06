@@ -91,13 +91,11 @@ _start:
 	mov	byte [cursor_pos_string], 0x1B
 	mov	byte [cursor_pos_string+1], '['
 
-	call set_cursor_pos
-	jmp get_input
-	
-set_cursor_pos:
 	mov	dword [cursor + tcursor.row], 2
 	mov	dword [cursor + tcursor.col], 1
-	ret
+
+	jmp get_input
+
 
 int_to_string:
 	push	rbx
@@ -119,9 +117,7 @@ int_to_string:
 	pop	rbx
 	ret
 
-mov_cursor:
-	mov	byte [cursor_pos_string_len], 2
-	mov	dword eax, [cursor + tcursor.row]
+add_cursor_coord_to_string:
 	call	int_to_string
 	
 	cld
@@ -136,55 +132,31 @@ mov_cursor:
 
 	mov	byte cl, [int_string_len]
 	add	byte cl, [cursor_pos_string_len]
+	ret
+
+mov_cursor:
+	mov	byte [cursor_pos_string_len], 2
+	mov	dword eax, [cursor + tcursor.row]
+	call	add_cursor_coord_to_string
 
 	mov	byte [cursor_pos_string+ecx], ';'
 	inc	byte cl
 	mov	byte [cursor_pos_string_len], cl
 
 	mov	dword eax, [cursor + tcursor.col]
-	call	int_to_string
+	call	add_cursor_coord_to_string
 	
-	cld
-	xor	dword ecx, ecx
-	xor	dword edi, edi
-	mov	byte cl, [int_string_len]
-	add	dword esi, int_string
-	inc	dword esi
-	mov	byte dil, [cursor_pos_string_len]
-	add	dword edi, cursor_pos_string
-	rep	movsb
-
-	mov	byte cl, [int_string_len]
-	add	byte cl, [cursor_pos_string_len]
-
 	mov	byte [cursor_pos_string+ecx], 'H'
 	inc	byte cl
 	mov	byte [cursor_pos_string_len], cl
 
-
+	;write the cursor pos
 	mov	rax, SYS_WRITE
 	mov	rdi, STDOUT
 	mov	rsi, cursor_pos_string
 	mov	dword edx, ecx
 	syscall
 
-	
-	; this only works when row and col are between 0 and 10
-	;mov	dword ecx, [cursor + tcursor.row]
-	;mov	dword edx, [cursor + tcursor.col]
-
-	;and	byte cl, 0x0f
-	;and	byte dl, 0x0f
-	;add	cl, 0x30
-	;add	dl, 0x30
-
-	;mov	byte [cursor_set_pos+cursor_pos_row], cl
-	;mov	byte [cursor_set_pos+cursor_pos_col], dl
-	;mov	rax, SYS_WRITE
-	;mov	rdi, STDOUT
-	;mov	rsi, cursor_set_pos
-	;mov	rdx, 6
-	;syscall
 	ret
 
 get_input:
@@ -230,10 +202,10 @@ display_key:
 	mov	dword edx, [hex_characters+edx]
 	mov	dword [hex_number], edx
 	mov	byte [hex_number+1], cl ; moving a dword here would corrupt the char address
-	mov rax, SYS_WRITE
-	mov rdi, STDOUT
-	mov rsi, hex_number
-	mov rdx, 2
+	mov	rax, SYS_WRITE
+	mov	rdi, STDOUT
+	mov	rsi, hex_number
+	mov	rdx, 2
 	syscall
 
 	ret 
@@ -257,8 +229,6 @@ move_cursor_up:
 print_string:
 	mov rax, SYS_WRITE
 	mov rdi, STDOUT
-	;mov rsi, hex_number
-	;mov rdx, 2
 	syscall
 	ret
 
